@@ -1,0 +1,107 @@
+#include <iostream>
+#include <string>
+#include "Serial.h"
+using namespace std;
+
+// Steuerzeichen
+static const unsigned char SOH = 0x01; //Start Of Header
+static const unsigned char ETX = 0x03; //End of Text
+static const unsigned char EOT = 0x04; //End Of Transmission
+static const unsigned char ACK = 0x06; //Acknowledge
+static const unsigned char NAK = 0x15; //No Acknowledge (fehler)
+
+
+static const int DATABYTES = 5;
+static const int BLOCKSIZE = 3 + DATABYTES + 1;
+
+
+unsigned char checksum5(const unsigned char* d) {
+    int sum = 0;
+    for (int i = 0; i < DATABYTES; ++i) {
+        sum += d[i];
+    }
+    return (unsigned char)(sum % 256);
+}
+
+int main() {
+    
+    string portNr;
+    cout << "COM Port Nummer: ";
+    //cin >> portNr;
+    portNr = "1"; //com1
+    string port = "COM" + portNr;
+
+    Serial com(port, 9600, 8, ONESTOPBIT, NOPARITY);
+
+    if (!com.open()) {
+        cout << "Fehler: Konnte " << port << " nicht oeffnen.\n";
+        return 1;
+    }
+    cout << "Sender gestartet auf " << port << endl;
+
+    string nachricht = "Hallo Welt?!";
+
+    // Fülle die Nachricht mit ETX-Zeichen auf, bis die Länge ein Vielfaches von DATABYTES ist.
+    while (nachricht.length() % DATABYTES != 0) {
+        nachricht += ETX;
+    }
+
+    int anzahlBloecke = nachricht.length() / DATABYTES;
+
+    cout << "Warte auf NAK ..." << endl;
+ 
+    while (com.read() != NAK) 
+    {
+        
+    }
+
+ 
+    for (int i = 0; i < anzahlBloecke; ++i) {
+        unsigned char blockNum = (unsigned char)(i + 1);
+        cout << "Block " << (int)blockNum << endl;
+
+        unsigned char daten[DATABYTES];
+        for (int k = 0; k < DATABYTES; ++k) {
+            daten[k] = nachricht[i * DATABYTES + k];
+        }
+
+        unsigned char chksum = checksum5(daten);
+        cout << "Checksumme: " << (int)chksum << endl;
+
+        bool blockBestaetigt = 0;
+        while (!blockBestaetigt) {
+            //SOH
+            com.write(SOH);
+            //blocknummüer
+            com.write(blockNum);
+            //invertiert
+            com.write(255 - blockNum);
+            //Datenbytes (5)
+            com.write((const char*)daten, DATABYTES);
+            //Prüfsumme
+            com.write(chksum);
+
+			//Auf antwort warten
+            int antwort = com.read();
+            if (antwort == ACK) {
+                blockBestaetigt = true;
+            }
+            
+        }
+    }
+
+	//sendet EOT für Ende der Übertragung
+    com.write(EOT);
+
+	//wartet auf ACK vom Empfänger
+    while (com.read() != ACK) 
+    {
+
+    }
+
+    cout << "Uebertragung abgeschlossen.\n";
+
+    com.close();
+    return 0;
+}
+
